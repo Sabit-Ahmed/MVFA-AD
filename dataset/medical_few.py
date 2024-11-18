@@ -7,8 +7,8 @@ import random
 import pandas as pd
 import numpy as np
 
-CLASS_NAMES = ['Brain', 'Liver', 'Retina_RESC', 'Retina_OCT2017', 'Chest', 'Histopathology']
-CLASS_INDEX = {'Brain':3, 'Liver':2, 'Retina_RESC':1, 'Retina_OCT2017':-1, 'Chest':-2, 'Histopathology':-3}
+CLASS_NAMES = ['Brain', 'Liver', 'Retina_RESC', 'Retina_OCT2017', 'Chest', 'Histopathology', 'Skin_ISIC2019']
+CLASS_INDEX = {'Brain':3, 'Liver':2, 'Retina_RESC':1, 'Retina_OCT2017':-1, 'Chest':-2, 'Histopathology':-3, 'Skin_ISIC2019':-4}
 
 
 class MedDataset(Dataset):
@@ -99,7 +99,7 @@ class MedDataset(Dataset):
         x = []
         img_dir = os.path.join(self.dataset_path, 'valid', 'good', 'img')
         normal_names = os.listdir(img_dir)
-
+        
         # select images
         if self.iterate < 0:
             random_choice = random.sample(normal_names, self.shot)
@@ -111,11 +111,11 @@ class MedDataset(Dataset):
                     if data_line[0] == f'n-{self.iterate}:':
                         random_choice = data_line[1:]
                         break
-
+        
         for f in random_choice:
-            if f.endswith('.png') or f.endswith('.jpeg'):
+            if f.endswith('.png') or f.endswith('.jpeg') or f.endswith('.jpg'):
                 x.append(os.path.join(img_dir, f))
-
+        
         fewshot_img = []
         for idx in range(self.shot):
             image = x[idx]
@@ -148,7 +148,7 @@ class MedDataset(Dataset):
                         break
 
         for f in random_choice:
-            if f.endswith('.png') or f.endswith('.jpeg'):
+            if f.endswith('.png') or f.endswith('.jpeg') or f.endswith('.jpg'):
                 x.append(os.path.join(img_dir, f))
                 y.append(os.path.join(mask_dir, f))
 

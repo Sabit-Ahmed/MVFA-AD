@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore")
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 
-CLASS_INDEX = {'Brain':3, 'Liver':2, 'Retina_RESC':1, 'Retina_OCT2017':-1, 'Chest':-2, 'Histopathology':-3}
+CLASS_INDEX = {'Brain':3, 'Liver':2, 'Retina_RESC':1, 'Retina_OCT2017':-1, 'Chest':-2, 'Histopathology':-3, 'Skin_ISIC2019':-4}
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -126,6 +126,7 @@ def main():
                     det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
                     anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)    
                     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
+                    anomaly_map = torch.clamp(anomaly_map, min=1e-8, max=1 - 1e-8) # Clamp for stability
                     anomaly_score = torch.mean(anomaly_map, dim=-1)
                     det_loss += loss_bce(anomaly_score, image_label)
 
@@ -142,10 +143,15 @@ def main():
                         anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
                                                     size=args.img_size, mode='bilinear', align_corners=True)
                         anomaly_map = torch.softmax(anomaly_map, dim=1)
+                        anomaly_map = torch.clamp(anomaly_map, min=1e-8, max=1 - 1e-8) # Clamp for stability
                         seg_loss += loss_focal(anomaly_map, mask)
                         seg_loss += loss_dice(anomaly_map[:, 1, :, :], mask)
                     
                     loss = seg_loss + det_loss
+                    # Check for NaN in loss
+                    if torch.isnan(loss) or torch.isinf(loss):
+                        print("Invalid loss detected. Skipping this batch.")
+                        continue
                     loss.requires_grad_(True)
                     seg_optimizer.zero_grad()
                     det_optimizer.zero_grad()
@@ -155,6 +161,10 @@ def main():
 
                 else:
                     loss = det_loss
+                    # Check for NaN in loss
+                    if torch.isnan(loss) or torch.isinf(loss):
+                        print("Invalid loss detected. Skipping this batch.")
+                        continue
                     loss.requires_grad_(True)
                     det_optimizer.zero_grad()
                     loss.backward()
@@ -184,7 +194,7 @@ def main():
             best_result = result
             print("Best result\n")
             if args.save_model == 1:
-                ckp_path = os.path.join(args.save_path, f'{args.obj}.pth')
+                ckp_path = os.path.join(args.save_path, f'{args.obj}_{args.shot}.pth')
                 torch.save({'seg_adapters': model.seg_adapters.state_dict(),
                             'det_adapters': model.det_adapters.state_dict()}, 
                             ckp_path)
@@ -300,6 +310,7 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         det_image_scores_few = (det_image_scores_few - det_image_scores_few.min()) / (det_image_scores_few.max() - det_image_scores_few.min())
     
         image_scores = 0.5 * det_image_scores_zero + 0.5 * det_image_scores_few
+        image_scores = np.nan_to_num(image_scores, nan=0.0, posinf=0.0, neginf=0.0)
         img_roc_auc_det = roc_auc_score(gt_list, image_scores)
         print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
 
