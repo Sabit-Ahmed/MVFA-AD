@@ -25,8 +25,8 @@ warnings.filterwarnings("ignore")
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 
-CLASS_INDEX = {'Brain':3, 'Liver':2, 'Retina_RESC':1, 'Retina_OCT2017':-1, 'Chest':-2, 'Histopathology':-3, 'Skin_ISIC2019':-4}
-CLASS_INDEX_INV = {3:'Brain', 2:'Liver', 1:'Retina_RESC', -1:'Retina_OCT2017', -2:'Chest', -3:'Histopathology', -4:'Skin_ISIC2019'}
+CLASS_INDEX = {'Skin_HAM10000':4, 'Brain':3, 'Liver':2, 'Retina_RESC':1, 'Retina_OCT2017':-1, 'Chest':-2, 'Histopathology':-3, 'Skin_ISIC2019':-4}
+CLASS_INDEX_INV = {4:'Skin_HAM10000', 3:'Brain', 2:'Liver', 1:'Retina_RESC', -1:'Retina_OCT2017', -2:'Chest', -3:'Histopathology', -4:'Skin_ISIC2019'}
 
 
 def setup_seed(seed):

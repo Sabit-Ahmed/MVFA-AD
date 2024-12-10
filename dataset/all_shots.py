@@ -37,12 +37,12 @@ def save_random_files_list(folder_path1, folder_path2, number_of_files, output_f
 
 
 # Example usage:
-task = "Skin_HAM10000"
+task = "Skin_ISIC2019"
 folder_path1 = f"/Users/bcw3zj/PycharmProjects/MVFA-AD/data/{task}_AD/valid/good/img"
 folder_path2 = f"/Users/bcw3zj/PycharmProjects/MVFA-AD/data/{task}_AD/valid/Ungood/img"
 save_path = f"/Users/bcw3zj/PycharmProjects/MVFA-AD/dataset/fewshot_seed/{task}/"
 number_of_files = min(len(os.listdir(folder_path1)), len(os.listdir(folder_path2)))  # Specify the number of random files you want
-# number_of_files = 128
+# number_of_files = 16
 output_file = save_path + f"{number_of_files}-shot.txt"  # Output file name
 
 save_random_files_list(folder_path1, folder_path2, number_of_files, output_file)

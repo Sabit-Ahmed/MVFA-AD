@@ -13,7 +13,7 @@ from CLIP.clip import create_model
 from CLIP.tokenizer import tokenize
 from CLIP.adapter import CLIP_Inplanted
 from PIL import Image
-from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise, confusion_matrix
+from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
 from utils import augment, cos_sim, encode_text_with_prompt_ensemble
 from prompt import REAL_NAME
@@ -163,19 +163,19 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 score_map_few = np.sum(anomaly_maps_few_shot, axis=0)
                 seg_score_map_few.append(score_map_few)
 
-                # zero-shot, seg head
-                anomaly_maps = []
-                for layer in range(len(seg_patch_tokens)):
-                    seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
-                    B, L, C = anomaly_map.shape
-                    H = int(np.sqrt(L))
-                    anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
-                                                size=args.img_size, mode='bilinear', align_corners=True)
-                    anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1, :, :]
-                    anomaly_maps.append(anomaly_map.cpu().numpy())
-                score_map_zero = np.sum(anomaly_maps, axis=0)
-                seg_score_map_zero.append(score_map_zero)
+                # # zero-shot, seg head
+                # anomaly_maps = []
+                # for layer in range(len(seg_patch_tokens)):
+                #     seg_patch_tokens[layer] /= seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                #     anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                #     B, L, C = anomaly_map.shape
+                #     H = int(np.sqrt(L))
+                #     anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
+                #                                 size=args.img_size, mode='bilinear', align_corners=True)
+                #     anomaly_map = torch.softmax(anomaly_map, dim=1)[:, 1, :, :]
+                #     anomaly_maps.append(anomaly_map.cpu().numpy())
+                # score_map_zero = np.sum(anomaly_maps, axis=0)
+                # seg_score_map_zero.append(score_map_zero)
                 
 
 
@@ -194,13 +194,13 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
                 det_image_scores_few.append(score_few_det)
 
                 # zero-shot, det head
-                anomaly_score = 0
-                for layer in range(len(det_patch_tokens)):
-                    det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
-                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
-                    anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
-                    anomaly_score += anomaly_map.mean()
-                det_image_scores_zero.append(anomaly_score.cpu().numpy())
+                # anomaly_score = 0
+                # for layer in range(len(det_patch_tokens)):
+                #     det_patch_tokens[layer] /= det_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                #     anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)
+                #     anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
+                #     anomaly_score += anomaly_map.mean()
+                # det_image_scores_zero.append(anomaly_score.cpu().numpy())
 
             
             gt_mask_list.append(mask.squeeze().cpu().detach().numpy())
@@ -214,13 +214,13 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
 
     if CLASS_INDEX[args.obj] > 0:
 
-        seg_score_map_zero = np.array(seg_score_map_zero)
+        # seg_score_map_zero = np.array(seg_score_map_zero)
         seg_score_map_few = np.array(seg_score_map_few)
 
-        seg_score_map_zero = (seg_score_map_zero - seg_score_map_zero.min()) / (seg_score_map_zero.max() - seg_score_map_zero.min())
+        # seg_score_map_zero = (seg_score_map_zero - seg_score_map_zero.min()) / (seg_score_map_zero.max() - seg_score_map_zero.min())
         seg_score_map_few = (seg_score_map_few - seg_score_map_few.min()) / (seg_score_map_few.max() - seg_score_map_few.min())
     
-        segment_scores = 0.5 * seg_score_map_zero + 0.5 * seg_score_map_few
+        segment_scores = 1 * seg_score_map_few
         seg_roc_auc = roc_auc_score(gt_mask_list.flatten(), segment_scores.flatten())
         print(f'{args.obj} pAUC : {round(seg_roc_auc,4)}')
 
@@ -232,26 +232,15 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
 
     else:
 
-        det_image_scores_zero = np.array(det_image_scores_zero)
+        # det_image_scores_zero = np.array(det_image_scores_zero)
         det_image_scores_few = np.array(det_image_scores_few)
 
-        det_image_scores_zero = (det_image_scores_zero - det_image_scores_zero.min()) / (det_image_scores_zero.max() - det_image_scores_zero.min())
+        # det_image_scores_zero = (det_image_scores_zero - det_image_scores_zero.min()) / (det_image_scores_zero.max() - det_image_scores_zero.min())
         det_image_scores_few = (det_image_scores_few - det_image_scores_few.min()) / (det_image_scores_few.max() - det_image_scores_few.min())
     
-        image_scores = 0.5 * det_image_scores_zero + 0.5 * det_image_scores_few
-        predicted_classes = image_scores > 0.5
-        tn, fp, fn, tp = confusion_matrix(gt_list, predicted_classes).ravel()
-        specificity_mel = tn / (tn+fp)
-        sensitivity_mel = tp / (tp+fn)
-        
-        specificity_nv = tp / (tp+fn)
-        sensitivity_nv = tn / (tn+fp)
+        image_scores = 1 * det_image_scores_few
         img_roc_auc_det = roc_auc_score(gt_list, image_scores)
         print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
-        print(f'{args.obj} SPE_mel : {specificity_mel}')
-        print(f'{args.obj} SEN_mel : {sensitivity_mel}')
-        print(f'{args.obj} SPE_nv : {specificity_nv}')
-        print(f'{args.obj} SEN_nv : {sensitivity_nv}')
 
         return img_roc_auc_det
 

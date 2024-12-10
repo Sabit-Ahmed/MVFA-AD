@@ -13,7 +13,7 @@ from CLIP.clip import create_model
 from CLIP.tokenizer import tokenize
 from CLIP.adapter import CLIP_Inplanted
 from PIL import Image
-from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise, confusion_matrix
+from sklearn.metrics import roc_auc_score, precision_recall_curve, pairwise
 from loss import FocalLoss, BinaryDiceLoss
 from utils import augment, cos_sim, encode_text_with_prompt_ensemble
 from prompt import REAL_NAME
@@ -64,17 +64,12 @@ def main():
     model = CLIP_Inplanted(clip_model=clip_model, features=args.features_list).to(device)
     model.eval()
 
-    checkpoint = torch.load(os.path.join(f'{args.save_path}', f'{args.obj}_{args.shot}.pth'))
-    model.seg_adapters.load_state_dict(checkpoint["seg_adapters"])
-    model.det_adapters.load_state_dict(checkpoint["det_adapters"])
-
     for name, param in model.named_parameters():
         param.requires_grad = True
 
     # optimizer for only adapters
     seg_optimizer = torch.optim.Adam(list(model.seg_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
     det_optimizer = torch.optim.Adam(list(model.det_adapters.parameters()), lr=args.learning_rate, betas=(0.5, 0.999))
-
 
 
     # load test dataset
@@ -113,21 +108,97 @@ def main():
 
     best_result = 0
 
-    seg_features = []
-    det_features = []
-    for image in support_loader:
-        image = image[0].to(device)
-        with torch.no_grad():
-            _, seg_patch_tokens, det_patch_tokens = model(image)
-            seg_patch_tokens = [p[0].contiguous() for p in seg_patch_tokens]
-            det_patch_tokens = [p[0].contiguous() for p in det_patch_tokens]
-            seg_features.append(seg_patch_tokens)
-            det_features.append(det_patch_tokens)
-    seg_mem_features = [torch.cat([seg_features[j][i] for j in range(len(seg_features))], dim=0) for i in range(len(seg_features[0]))]
-    det_mem_features = [torch.cat([det_features[j][i] for j in range(len(det_features))], dim=0) for i in range(len(det_features[0]))]
-    
+    for epoch in range(args.epoch):
+        print('epoch ', epoch, ':')
 
-    result = test(args, model, test_loader, text_features, seg_mem_features, det_mem_features)
+        loss_list = []
+        for (image, gt, label) in train_loader:
+            image = image.to(device)
+            with torch.cuda.amp.autocast():
+                _, seg_patch_tokens, det_patch_tokens = model(image)
+                seg_patch_tokens = [p[0, 1:, :] for p in seg_patch_tokens]
+                det_patch_tokens = [p[0, 1:, :] for p in det_patch_tokens]
+                    
+                # det loss
+                det_loss = 0
+                image_label = label.to(device)
+                for layer in range(len(det_patch_tokens)):
+                    det_patch_tokens[layer] = det_patch_tokens[layer] / det_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                    anomaly_map = (100.0 * det_patch_tokens[layer] @ text_features).unsqueeze(0)    
+                    anomaly_map = torch.softmax(anomaly_map, dim=-1)[:, :, 1]
+                    anomaly_map = torch.clamp(anomaly_map, min=1e-8, max=1 - 1e-8) # Clamp for stability
+                    anomaly_score = torch.mean(anomaly_map, dim=-1)
+                    det_loss += loss_bce(anomaly_score, image_label)
+
+                if CLASS_INDEX[args.obj] > 0:
+                    # pixel level
+                    seg_loss = 0
+                    mask = gt.squeeze(0).to(device)
+                    mask[mask > 0.5], mask[mask <= 0.5] = 1, 0
+                    for layer in range(len(seg_patch_tokens)):
+                        seg_patch_tokens[layer] = seg_patch_tokens[layer] / seg_patch_tokens[layer].norm(dim=-1, keepdim=True)
+                        anomaly_map = (100.0 * seg_patch_tokens[layer] @ text_features).unsqueeze(0)
+                        B, L, C = anomaly_map.shape
+                        H = int(np.sqrt(L))
+                        anomaly_map = F.interpolate(anomaly_map.permute(0, 2, 1).view(B, 2, H, H),
+                                                    size=args.img_size, mode='bilinear', align_corners=True)
+                        anomaly_map = torch.softmax(anomaly_map, dim=1)
+                        anomaly_map = torch.clamp(anomaly_map, min=1e-8, max=1 - 1e-8) # Clamp for stability
+                        seg_loss += loss_focal(anomaly_map, mask)
+                        seg_loss += loss_dice(anomaly_map[:, 1, :, :], mask)
+                    
+                    loss = seg_loss + det_loss
+                    # Check for NaN in loss
+                    if torch.isnan(loss) or torch.isinf(loss):
+                        print("Invalid loss detected. Skipping this batch.")
+                        continue
+                    loss.requires_grad_(True)
+                    seg_optimizer.zero_grad()
+                    det_optimizer.zero_grad()
+                    loss.backward()
+                    seg_optimizer.step()
+                    det_optimizer.step()
+
+                else:
+                    loss = det_loss
+                    # Check for NaN in loss
+                    if torch.isnan(loss) or torch.isinf(loss):
+                        print("Invalid loss detected. Skipping this batch.")
+                        continue
+                    loss.requires_grad_(True)
+                    det_optimizer.zero_grad()
+                    loss.backward()
+                    det_optimizer.step()
+
+                loss_list.append(loss.item())
+
+        print("Loss: ", np.mean(loss_list))
+
+
+        seg_features = []
+        det_features = []
+        for image in support_loader:
+            image = image[0].to(device)
+            with torch.no_grad():
+                _, seg_patch_tokens, det_patch_tokens = model(image)
+                seg_patch_tokens = [p[0].contiguous() for p in seg_patch_tokens]
+                det_patch_tokens = [p[0].contiguous() for p in det_patch_tokens]
+                seg_features.append(seg_patch_tokens)
+                det_features.append(det_patch_tokens)
+        seg_mem_features = [torch.cat([seg_features[j][i] for j in range(len(seg_features))], dim=0) for i in range(len(seg_features[0]))]
+        det_mem_features = [torch.cat([det_features[j][i] for j in range(len(det_features))], dim=0) for i in range(len(det_features[0]))]
+        
+
+        result = test(args, model, test_loader, text_features, seg_mem_features, det_mem_features)
+        if result > best_result:
+            best_result = result
+            print("Best result\n")
+            if args.save_model == 1:
+                ckp_path = os.path.join(args.save_path, f'{args.obj}_{args.shot}_wo_zero.pth')
+                torch.save({'seg_adapters': model.seg_adapters.state_dict(),
+                            'det_adapters': model.det_adapters.state_dict()}, 
+                            ckp_path)
+          
 
 
 def test(args, model, test_loader, text_features, seg_mem_features, det_mem_features):
@@ -239,23 +310,11 @@ def test(args, model, test_loader, text_features, seg_mem_features, det_mem_feat
         det_image_scores_few = (det_image_scores_few - det_image_scores_few.min()) / (det_image_scores_few.max() - det_image_scores_few.min())
     
         image_scores = 0.5 * det_image_scores_zero + 0.5 * det_image_scores_few
-        predicted_classes = image_scores > 0.5
-        tn, fp, fn, tp = confusion_matrix(gt_list, predicted_classes).ravel()
-        specificity_mel = tn / (tn+fp)
-        sensitivity_mel = tp / (tp+fn)
-        
-        specificity_nv = tp / (tp+fn)
-        sensitivity_nv = tn / (tn+fp)
+        image_scores = np.nan_to_num(image_scores, nan=0.0, posinf=0.0, neginf=0.0)
         img_roc_auc_det = roc_auc_score(gt_list, image_scores)
         print(f'{args.obj} AUC : {round(img_roc_auc_det,4)}')
-        print(f'{args.obj} SPE_mel : {specificity_mel}')
-        print(f'{args.obj} SEN_mel : {sensitivity_mel}')
-        print(f'{args.obj} SPE_nv : {specificity_nv}')
-        print(f'{args.obj} SEN_nv : {sensitivity_nv}')
 
         return img_roc_auc_det
-
-
 
 
 
