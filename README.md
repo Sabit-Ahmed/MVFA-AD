@@ -1,8 +1,6 @@
-# Adapting Visual-Language Models for Generalizable Anomaly Detection in Medical Images
+# Reproducibility Study of "Adapting Visual-Language Models for Generalizable Anomaly Detection in Medical Images"
 
-This is an official implementation of “Adapting Visual-Language Models for Generalizable Anomaly Detection in Medical Images” with PyTorch, accepted by CVPR 2024 (Highlight).
-
-[Paper Link](https://arxiv.org/abs/2403.12570)
+[Original Paper Link](https://arxiv.org/abs/2403.12570)
 
 If our work is helpful for your research, please consider citing:
 ```
@@ -16,9 +14,8 @@ If our work is helpful for your research, please consider citing:
 
 <center><img src="images/MVFA.png "width="60%"></center>
 
-**Abstract**:  Recent advancements in large-scale visual-language pre-trained models have led to significant progress in zero-/few-shot anomaly detection within natural image domains. However, the substantial domain divergence between natural and medical images limits the effectiveness of these methodologies in medical anomaly detection. This paper introduces a novel lightweight multi-level adaptation and comparison framework to repurpose the CLIP model for medical anomaly detection. Our approach integrates multiple residual adapters into the pre-trained visual encoder, enabling a stepwise enhancement of visual features across different levels. This multi-level adaptation is guided by multi-level, pixel-wise visual-language feature alignment loss functions, which recalibrate the model’s focus from object semantics in natural imagery to anomaly identification in medical images. The adapted features exhibit improved generalization across various medical data types, even in zero-shot scenarios where the model encounters unseen medical modalities and anatomical regions during training. Our experiments on medical anomaly detection benchmarks demonstrate that our method significantly surpasses current state-of-the-art models, with an average AUC improvement of 6.24\% and 7.33\% for anomaly classification, 2.03\% and 2.37\% for anomaly segmentation, under the zero-shot and few-shot settings, respectively.
-
-**Keywords**: Anomaly Detection, Medical Images
+**Abstract**: Medical anomaly detection with vision-language model has gained a lot of attention recently. A machine learning model trained for anomaly detection task should be accurate in prediction as well as should be reproducible. Furthermore, it is extremely important to investigate the high-performing claims of such anomaly detection model. The current study aims to investigate the findings obtained by an adaptive vision-language model MVFA-AD proposed by Huang et al. (2024). This framework incorporates multi-level visual feature adapter and language-vision alignments in zero and few-shot learning contexts. We first replicate the results from zero and few-shot experiments with the MVFA-AD and then conduct a series of extended tasks such as, adapting MVFA-AD to a new modality, demonstrating effectiveness of the proposed architecture, etc. We found that MVFA-AD has the generalizable capability and performed well in various anatomical regions in medical imaging domain, which supports the main claim of the MVFA-AD study.
+**Keywords**: Anomaly Detection, Medical Images, Reproducibility
 
 <center><img src="images/pipeline.png "width="80%"></center>
 
@@ -39,7 +36,7 @@ If our work is helpful for your research, please consider citing:
 - regex
 
 ### Device
-Single NVIDIA GTX 3090
+NVIDIA General purpose GPUs
 
 ### Pretrained model
 - CLIP: https://openaipublic.azureedge.net/clip/models/3035c92b350959924f9f00213499208652fc7ea050643e8b385c2dac08641f02/ViT-L-14-336px.pt
